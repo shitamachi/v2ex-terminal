@@ -13,8 +13,9 @@ use crossterm::{
 };
 use ratatui::backend::Backend;
 use ratatui::prelude::*;
-use ratatui::widgets::{Cell, List, ListItem, Row, Table};
-use anyhow::Result;
+use ratatui::widgets::{List, ListItem, Tabs};
+use anyhow::{Result};
+use ratatui::symbols::DOT;
 use crate::crawler::V2exTopic;
 
 #[tokio::main]
@@ -47,13 +48,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 #[derive(Clone, Debug, Default)]
 pub struct AppState {
+    current_page: usize,
     data: Option<Vec<V2exTopic>>,
     loading_state: usize,
 }
 
 impl AppState {
     pub fn new() -> Self {
-        AppState { loading_state: 1, data: None }
+        AppState { current_page: 1, loading_state: 1, data: None }
     }
 
     pub fn set_data(&mut self, data: Vec<V2exTopic>) {
@@ -98,6 +100,13 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, tick_rate: Duratio
                             should_quit = true;
                             break;
                         }
+                        // numbers
+                        event::KeyCode::Char(c) if c.is_ascii_digit() => {
+                            // open in browser
+                            let index = c.to_digit(10).unwrap() as usize + 1;
+                            let url = app_state.data.as_ref().unwrap()[index].get_topic_url();
+                            open::that(url).unwrap();
+                        }
                         _ => {}
                     }
                 }
@@ -122,34 +131,53 @@ fn data(app_state: &mut AppState, channel: &std::sync::mpsc::Receiver<Vec<V2exTo
 
 
 fn ui<B: Backend>(f: &mut Frame<B>, app_state: &mut AppState) {
+    let has_data = app_state.data.is_some();
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
         .constraints(
-            [
-                Constraint::Percentage(100),
-            ].as_ref()
+            if has_data {
+                vec![
+                    Constraint::Percentage(15),
+                    Constraint::Percentage(85),
+                ]
+            } else {
+                vec![
+                    Constraint::Percentage(100),
+                ]
+            }
         )
         .split(f.size());
 
-    match &app_state.data {
-        Some(topics) => {
-            let list_items = topics.iter().map(|t| t.into()).collect::<Vec<ListItem>>();
-            let list = List::new(list_items)
-                .block(Block::default().title("List").borders(Borders::ALL))
-                .style(Style::default().fg(Color::White))
-                .highlight_style(Style::default().add_modifier(Modifier::ITALIC))
-                .highlight_symbol(">>");
-            f.render_widget(list, chunks[0])
-        }
-        None => {
-            // 1 to 5 point count, each refresh increase number and reach 5 next to 1
-            let loading_progress_text = format!("Loading{}", ".".repeat(app_state.loading_state));
-            let loading_progress = ratatui::widgets::Paragraph::new(loading_progress_text)
-                .style(Style::default().fg(Color::White).bg(Color::Black));
-            app_state.loading_state = (app_state.loading_state + 1) % 5;
-            f.render_widget(loading_progress, chunks[0])
-        }
+    let Some(topics) = &app_state.data else {
+        // 1 to 5 point count, each refresh increase number and reach 5 next to 1
+        let loading_progress_text = format!("Loading{}", ".".repeat(app_state.loading_state));
+        let loading_progress = ratatui::widgets::Paragraph::new(loading_progress_text)
+            .style(Style::default().fg(Color::White).bg(Color::Black));
+        app_state.loading_state = (app_state.loading_state + 1) % 5;
+        f.render_widget(loading_progress, chunks[0]);
+        return;
     };
-}
 
+    // todo tabs
+    let titles = ["Tab1", "Tab2", "Tab3", "Tab4"].iter().cloned().map(Line::from).collect();
+    let tabs = Tabs::new(titles)
+        .block(Block::default().title("Tabs").borders(Borders::ALL))
+        .style(Style::default().fg(Color::White))
+        .highlight_style(Style::default().fg(Color::Yellow))
+        .divider(DOT);
+
+    // fixme topic number should not greater than 10, or use other shortcut to open topic
+    let list_items = topics.iter().enumerate().map(|(idx, t)| {
+        ListItem::new(format!("{} \\ {}", idx + 1, t.list_item_format()))
+    }).collect::<Vec<ListItem>>();
+    let list = List::new(list_items)
+        .block(Block::default().title(format!("Num {} Page", app_state.current_page)).borders(Borders::ALL))
+        .style(Style::default().fg(Color::White))
+        .highlight_style(Style::default().add_modifier(Modifier::ITALIC))
+        .highlight_symbol(">>");
+
+    f.render_widget(tabs, chunks[0]);
+    f.render_widget(list, chunks[1]);
+}

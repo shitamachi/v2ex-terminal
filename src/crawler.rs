@@ -26,6 +26,17 @@ pub struct V2exTopic {
     last_reply_user: V2exUser,
 }
 
+impl V2exTopic {
+    pub fn list_item_format(&self) -> String {
+        let s = format!("title: {} time: {}", self.title, self.send_time.format("%Y/%m/%d %H:%M"));
+        s
+    }
+
+    pub fn get_topic_url(&self) -> String {
+        format!("https://www.v2ex.com{}", self.short_url)
+    }
+}
+
 impl<'a> From<&V2exTopic> for ListItem<'a> {
     fn from(v: &V2exTopic) -> Self {
         let s = format!("title: {} time: {}", v.title, v.send_time.format("%Y/%m/%d %H:%M"));
